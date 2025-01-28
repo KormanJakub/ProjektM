@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Xml.Serialization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProjektM.Models;
 using ProjektM.Services;
@@ -202,5 +203,78 @@ public class AdminController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { Message = "OrderDetail removed successfully" });
+    }
+    
+    [HttpPost("upload-xml")]
+    public async Task<IActionResult> UploadXml(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { Message = "Invalid file uploaded." });
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            var xmlSerializer = new XmlSerializer(typeof(ProductsXML));
+            var productsXml = (ProductsXML)xmlSerializer.Deserialize(stream);
+            var products = productsXml.Items;
+
+            foreach (var xmlProduct in products)
+            {
+                var dbProduct = await _context.Products
+                    .Include(p => p.Tags)
+                    .FirstOrDefaultAsync(p => p.Name == xmlProduct.Name);
+
+                if (dbProduct != null)
+                {
+                    dbProduct.Description = xmlProduct.Description;
+                    dbProduct.Price = xmlProduct.Price;
+                    dbProduct.Stock = xmlProduct.Stock;
+                    
+                    _context.Entry(dbProduct).State = EntityState.Modified;
+                }
+                else
+                {
+                    var newProductId = 1; 
+                    if (await _context.Products.AnyAsync())
+                        newProductId = await _context.Products.MaxAsync(p => p.ProductId) + 1;
+                    
+                    dbProduct = new Product
+                    {
+                        ProductId = newProductId,
+                        Name = xmlProduct.Name,
+                        Description = xmlProduct.Description,
+                        Price = xmlProduct.Price,
+                        Stock = xmlProduct.Stock,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _context.Products.AddAsync(dbProduct);
+                }
+
+                var tag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == xmlProduct.TagName);
+                var newTagId = 1; 
+                if (await _context.Tags.AnyAsync())
+                    newTagId = await _context.Tags.MaxAsync(p => p.TagId) + 1;
+                
+                if (tag == null)
+                {
+                    tag = new Tag
+                    {
+                        TagId = newTagId,
+                        Name = xmlProduct.TagName
+                    };
+                    await _context.Tags.AddAsync(tag);
+                }
+
+                if (!dbProduct.Tags.Contains(tag))
+                    dbProduct.Tags.Add(tag);
+                await _context.SaveChangesAsync();
+                
+            }
+            return Ok(new { Message = "XML processed successfully." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Message = "An error occurred while processing the file.", Details = ex.Message });
+        }
     }
 }

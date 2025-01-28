@@ -55,23 +55,26 @@ public class GenerateResetTokenService
         return principal;
     }
     
-    public string GenerateResponseToken(object responseData)
+    public string GenerateToken(int userId)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_encryptionKey));
+        var jwtKey = _secretKey;
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+        var claims = new[]
+        {
+            new Claim("UserId", userId.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+            
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Claims = new Dictionary<string, object>
-            {
-                { "data", System.Text.Json.JsonSerializer.Serialize(responseData) }
-            },
-            Expires = DateTime.UtcNow.AddMinutes(10),
-            SigningCredentials = creds
-        };
+        var token = new JwtSecurityToken(
+            issuer: null,
+            audience: null,
+            claims: claims,
+            expires: DateTime.Now.AddMinutes(30),
+            signingCredentials: creds);
 
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-        return tokenHandler.WriteToken(token);
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

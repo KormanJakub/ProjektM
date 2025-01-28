@@ -24,7 +24,7 @@ public class UserController : ControllerBase
     
     private int GetUserIdFromToken()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        var userIdClaim = User.FindFirst("UserId");
         if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
         {
             throw new UnauthorizedAccessException("Invalid or missing UserId in token.");
@@ -48,15 +48,20 @@ public class UserController : ControllerBase
     }
     
     [HttpPut("change-password")]
-    public async Task<IActionResult> ChangePassword([FromBody] string token)
+    public async Task<IActionResult> ChangePassword([FromBody] TokenRequest request)
     {
+        if (string.IsNullOrEmpty(request.Token))
+        {
+            return BadRequest(new { Message = "Token is required." });
+        }
+
         try
         {
-            var claimsPrincipal = _tokenService.ValidateToken(token);
+            var claimsPrincipal = _tokenService.ValidateToken(request.Token);
 
-            var userId = int.Parse(claimsPrincipal.FindFirst("userId")?.Value ?? throw new UnauthorizedAccessException("Invalid token."));
-            var oldPassword = claimsPrincipal.FindFirst("oldPassword")?.Value;
-            var newPassword = claimsPrincipal.FindFirst("newPassword")?.Value;
+            var userId = GetUserIdFromToken();
+            var oldPassword = claimsPrincipal.FindFirst("OldPassword")?.Value;
+            var newPassword = claimsPrincipal.FindFirst("NewPassword")?.Value;
 
             if (string.IsNullOrEmpty(oldPassword) || string.IsNullOrEmpty(newPassword))
             {
@@ -93,19 +98,20 @@ public class UserController : ControllerBase
     }
 
     [HttpPost("create-order")]
-    public async Task<IActionResult> CreateOrder([FromBody] string token)
+    public async Task<IActionResult> CreateOrder([FromBody] TokenRequest request)
     {
+        if (string.IsNullOrEmpty(request.Token))
+            return BadRequest(new { Message = "Token is required." });
+        
         try
         {
-            var claimsPrincipal = _tokenService.ValidateToken(token);
+            var userId = GetUserIdFromToken();
+            var claimsPrincipal = _tokenService.ValidateToken(request.Token);
             
-            var userId = int.Parse(claimsPrincipal.FindFirst("userId")?.Value ?? throw new UnauthorizedAccessException("Invalid token."));
-            var items = claimsPrincipal.FindFirst("items")?.Value;
+            var items = claimsPrincipal.FindFirst("Items")?.Value;
 
             if (string.IsNullOrEmpty(items))
-            {
                 return BadRequest(new { Message = "Invalid token payload." });
-            }
 
             var order = new Order
             {
@@ -117,7 +123,7 @@ public class UserController : ControllerBase
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            return Ok(new { Message = "Order created successfully.", OrderId = order.OrderId });
+            return Ok(new { Message = "Order created successfully."});
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -126,25 +132,24 @@ public class UserController : ControllerBase
     }
 
     [HttpDelete("cancel-order")]
-    public async Task<IActionResult> CancelOrder([FromBody] string token)
+    public async Task<IActionResult> CancelOrder([FromBody] TokenRequest request)
     {
+        if (string.IsNullOrEmpty(request.Token))
+            return BadRequest(new { Message = "Token is required." });
+        
         try
         {
-            var claimsPrincipal = _tokenService.ValidateToken(token);
-
-            var userId = int.Parse(claimsPrincipal.FindFirst("userId")?.Value ?? throw new UnauthorizedAccessException("Invalid token."));
-            var orderId = int.Parse(claimsPrincipal.FindFirst("orderId")?.Value ?? throw new UnauthorizedAccessException("Invalid token."));
+            var userId = GetUserIdFromToken();
+            var claimsPrincipal = _tokenService.ValidateToken(request.Token);
+            
+            var orderId = int.Parse(claimsPrincipal.FindFirst("OrderId")?.Value);
 
             var order = await _context.Orders.FindAsync(orderId);
             if (order == null)
-            {
                 return NotFound(new { Message = "Order not found." });
-            }
 
             if (order.UserId != userId)
-            {
                 return BadRequest(new { Message = "You are not authorized to cancel this order." });
-            }
 
             _context.Orders.Remove(order);
             await _context.SaveChangesAsync();

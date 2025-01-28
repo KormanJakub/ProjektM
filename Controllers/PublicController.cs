@@ -59,7 +59,9 @@ public class PublicController : ControllerBase
         if (!_passwordHasher.VerifyPassword(user.PasswordHash, model.Password)) 
             return Unauthorized(new { Message = "Invalid credentials" });
 
-        return Ok(new { Message = "Login successful" });
+        var token = _token.GenerateToken(user.UserId);
+
+        return Ok(new { Token =  token });
     }
 
     [HttpPost("forget-password")]
